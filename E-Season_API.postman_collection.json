@@ -1,277 +1,609 @@
 {
 	"info": {
-		"_postman_id": "e-season-api-collection",
-		"name": "E-Season Backend API",
-		"description": "Complete API collection for E-Season passenger management system",
+		"_postman_id": "e-season-api-collection-streamlined",
+		"name": "E-Season Backend API - Streamlined",
+		"description": "Streamlined API collection for E-Season passenger management system with specific endpoints only",
 		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
 	},
 	"item": [
 		{
-			"name": "Health Check",
-			"request": {
-				"method": "GET",
-				"header": [],
-				"url": {
-					"raw": "{{base_url}}/health",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"health"
-					]
-				},
-				"description": "Check if the backend server is running"
-			},
-			"response": []
-		},
-		{
-			"name": "Passenger Registration",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"name_with_initials\": \"J.K. Silva\",\n  \"full_name\": \"John Kamal Silva\",\n  \"address\": \"123 Main Street, Colombo 03, Sri Lanka\",\n  \"phone_number\": \"+94771234567\",\n  \"email\": \"john.silva@example.com\",\n  \"from_station\": \"Colombo Fort\",\n  \"to_station\": \"Kandy\",\n  \"travel_date\": \"2025-07-15\",\n  \"password\": \"securePassword123\",\n  \"confirm_password\": \"securePassword123\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/register",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"register"
-					]
-				},
-				"description": "Register a new passenger"
-			},
-			"response": []
-		},
-		{
-			"name": "Passenger Login",
-			"event": [
+			"name": "System",
+			"item": [
 				{
-					"listen": "test",
-					"script": {
-						"exec": [
-							"if (pm.response.code === 200) {",
-							"    const responseJson = pm.response.json();",
-							"    if (responseJson.data && responseJson.data.token) {",
-							"        pm.collectionVariables.set('auth_token', responseJson.data.token);",
-							"        console.log('Token saved:', responseJson.data.token);",
-							"    }",
-							"}"
-						],
-						"type": "text/javascript"
-					}
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/health",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"health"
+							]
+						},
+						"description": "Check if the backend server is running"
+					},
+					"response": []
 				}
 			],
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"email\": \"john.silva@example.com\",\n  \"password\": \"securePassword123\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/login",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"login"
-					]
-				},
-				"description": "Login with passenger credentials. This will automatically save the JWT token for subsequent requests."
-			},
-			"response": []
+			"description": "System health and status endpoints"
 		},
 		{
-			"name": "Get Passenger Profile",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Authorization",
-						"value": "Bearer {{auth_token}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/profile",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"profile"
-					]
-				},
-				"description": "Get current passenger's profile information"
-			},
-			"response": []
-		},
-		{
-			"name": "Update Passenger Profile",
-			"request": {
-				"method": "PUT",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					},
-					{
-						"key": "Authorization",
-						"value": "Bearer {{auth_token}}",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"name_with_initials\": \"J.K. Silva\",\n  \"full_name\": \"John Kamal Silva\",\n  \"address\": \"456 Updated Street, Colombo 05, Sri Lanka\",\n  \"phone_number\": \"+94771234567\",\n  \"from_station\": \"Colombo Fort\",\n  \"to_station\": \"Galle\",\n  \"travel_date\": \"2025-08-20\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/profile",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"profile"
-					]
-				},
-				"description": "Update passenger profile information"
-			},
-			"response": []
-		},
-		{
-			"name": "Verify Phone Number",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					},
-					{
-						"key": "Authorization",
-						"value": "Bearer {{auth_token}}",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"phone_number\": \"+94771234567\",\n  \"otp\": \"123456\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/verify-phone",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"verify-phone"
-					]
-				},
-				"description": "Verify passenger's phone number with OTP"
-			},
-			"response": []
-		},
-		{
-			"name": "Change Password",
-			"request": {
-				"method": "POST",
-				"header": [
-					{
-						"key": "Content-Type",
-						"value": "application/json"
-					},
-					{
-						"key": "Authorization",
-						"value": "Bearer {{auth_token}}",
-						"type": "text"
-					}
-				],
-				"body": {
-					"mode": "raw",
-					"raw": "{\n  \"current_password\": \"securePassword123\",\n  \"new_password\": \"newSecurePassword456\",\n  \"confirm_password\": \"newSecurePassword456\"\n}"
-				},
-				"url": {
-					"raw": "{{base_url}}/api/v1/passenger/change-password",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"passenger",
-						"change-password"
-					]
-				},
-				"description": "Change passenger's password"
-			},
-			"response": []
-		},
-		{
-			"name": "Get All Passengers (Admin)",
-			"request": {
-				"method": "GET",
-				"header": [
-					{
-						"key": "Authorization",
-						"value": "Bearer {{auth_token}}",
-						"type": "text"
-					}
-				],
-				"url": {
-					"raw": "{{base_url}}/api/v1/admin/passenger/all?page=1&limit=10",
-					"host": [
-						"{{base_url}}"
-					],
-					"path": [
-						"api",
-						"v1",
-						"admin",
-						"passenger",
-						"all"
-					],
-					"query": [
-						{
-							"key": "page",
-							"value": "1",
-							"description": "Page number for pagination"
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Passenger Registration",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name_with_initials\": \"J.K. Silva\",\n  \"full_name\": \"John Kamal Silva\",\n  \"address\": \"123 Main Street, Colombo 03, Sri Lanka\",\n  \"phone_number\": \"+94771234567\",\n  \"email\": \"john.silva@example.com\",\n  \"from_station\": \"Colombo Fort\",\n  \"to_station\": \"Kandy\",\n  \"travel_date\": \"2025-07-15\",\n  \"password\": \"securePassword123\",\n  \"confirm_password\": \"securePassword123\"\n}"
 						},
-						{
-							"key": "limit",
-							"value": "10",
-							"description": "Number of records per page"
-						}
-					]
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/register",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"register"
+							]
+						},
+						"description": "Register a new passenger"
+					},
+					"response": []
 				},
-				"description": "Get all passengers with pagination (Admin access required)"
-			},
-			"response": []
+				{
+					"name": "Passenger Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"if (pm.response.code === 200) {",
+									"    const response = pm.response.json();",
+									"    if (response.data && response.data.token) {",
+									"        pm.environment.set(\"auth_token\", response.data.token);",
+									"        console.log(\"Token saved:\", response.data.token);",
+									"    }",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john.silva@example.com\",\n  \"password\": \"securePassword123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"login"
+							]
+						},
+						"description": "Login with passenger credentials. This will automatically save the JWT token for subsequent requests."
+					},
+					"response": []
+				}
+			],
+			"description": "User authentication endpoints"
+		},
+		{
+			"name": "Passenger Operations by ID",
+			"item": [
+				{
+					"name": "Get Passenger Profile by ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/profile/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"profile",
+								"1"
+							]
+						},
+						"description": "Get passenger profile information by passenger ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Update Passenger Profile by ID",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name_with_initials\": \"J.K. Silva\",\n  \"full_name\": \"John Kamal Silva Updated\",\n  \"address\": \"456 Updated Street, Colombo 05, Sri Lanka\",\n  \"phone_number\": \"+94771234567\",\n  \"from_station\": \"Colombo Fort\",\n  \"to_station\": \"Galle\",\n  \"travel_date\": \"2025-08-20\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/profile/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"profile",
+								"1"
+							]
+						},
+						"description": "Update passenger profile information by passenger ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Verify Phone Number by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"phone_number\": \"+94771234567\",\n  \"otp\": \"123456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/verify-phone/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"verify-phone",
+								"1"
+							]
+						},
+						"description": "Verify passenger's phone number with OTP by passenger ID"
+					},
+					"response": []
+				},
+				{
+					"name": "Change Password by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"current_password\": \"securePassword123\",\n  \"new_password\": \"newSecurePassword456\",\n  \"confirm_password\": \"newSecurePassword456\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/passenger/change-password/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"passenger",
+								"change-password",
+								"1"
+							]
+						},
+						"description": "Change passenger's password by passenger ID"
+					},
+					"response": []
+				}
+			],
+			"description": "Passenger operations that require specific passenger ID"
+		},
+		{
+			"name": "Admin Operations",
+			"item": [
+				{
+					"name": "Get All Passengers (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/all?page=1&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"all"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number for pagination"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Get all passengers with pagination (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Passenger by ID (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/1",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"1"
+							]
+						},
+						"description": "Get specific passenger's profile information by ID (Admin access)"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Passengers by Email (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/search?email=john&page=1&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"search"
+							],
+							"query": [
+								{
+									"key": "email",
+									"value": "john",
+									"description": "Search by email (partial match)"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number for pagination"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Search passengers by email with pagination (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Passengers by Route (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/search?from_station=Colombo&to_station=Kandy&page=1&limit=20",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"search"
+							],
+							"query": [
+								{
+									"key": "from_station",
+									"value": "Colombo",
+									"description": "Departure station"
+								},
+								{
+									"key": "to_station",
+									"value": "Kandy",
+									"description": "Destination station"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								},
+								{
+									"key": "limit",
+									"value": "20",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Search passengers by specific route (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Passengers by Phone (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/search?phone_number=771234567&page=1&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"search"
+							],
+							"query": [
+								{
+									"key": "phone_number",
+									"value": "771234567",
+									"description": "Search by phone number (partial match)"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Search passengers by phone number (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Passengers by Verification Status (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/search?verification_status=phone_verified&page=1&limit=15",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"search"
+							],
+							"query": [
+								{
+									"key": "verification_status",
+									"value": "phone_verified",
+									"description": "Filter by verification status (phone_verified or admin_verified)"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								},
+								{
+									"key": "limit",
+									"value": "15",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Search passengers by verification status (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Search Passengers - Combined Criteria (Admin)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/search?email=silva&from_station=Colombo&verification_status=phone_verified&page=1&limit=10",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"search"
+							],
+							"query": [
+								{
+									"key": "email",
+									"value": "silva",
+									"description": "Search by email (partial match)"
+								},
+								{
+									"key": "from_station",
+									"value": "Colombo",
+									"description": "Departure station"
+								},
+								{
+									"key": "verification_status",
+									"value": "phone_verified",
+									"description": "Filter by verification status"
+								},
+								{
+									"key": "page",
+									"value": "1",
+									"description": "Page number"
+								},
+								{
+									"key": "limit",
+									"value": "10",
+									"description": "Number of results per page"
+								}
+							]
+						},
+						"description": "Search passengers using multiple criteria combined (Admin access required)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get Multiple Passengers by IDs (Admin)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{auth_token}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"passenger_ids\": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/passenger/multiple",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"passenger",
+								"multiple"
+							]
+						},
+						"description": "Admin endpoint to get multiple passengers data by providing an array of passenger IDs (max 50 IDs per request)"
+					},
+					"response": []
+				}
+			],
+			"description": "Administrative operations for passenger management with enhanced search capabilities"
 		}
 	],
 	"event": [
@@ -298,12 +630,14 @@
 		{
 			"key": "base_url",
 			"value": "http://localhost:8080",
-			"type": "string"
+			"type": "string",
+			"description": "Base URL for the E-Season Backend API"
 		},
 		{
 			"key": "auth_token",
 			"value": "",
-			"type": "string"
+			"type": "string",
+			"description": "JWT authentication token (automatically set by login request)"
 		}
 	]
 }
