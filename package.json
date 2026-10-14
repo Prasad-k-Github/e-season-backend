@@ -1,0 +1,31 @@
+{
+  "name": "e-season-backend",
+  "version": "1.0.0",
+  "description": "REST API for the e_season Sri Lanka Railways season ticket prototype (mock data only)",
+  "main": "src/server.js",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "db:init": "node scripts/db-init.js",
+    "db:seed": "node scripts/seed.js",
+    "db:add-passenger-password": "node scripts/add-passenger-password.js",
+    "keys": "node scripts/gen-keys.js",
+    "test": "node --test \"test/**/*.test.js\""
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.4.0",
+    "mysql2": "^3.24.6",
+    "zod": "^4.6.7"
+  }
+}
