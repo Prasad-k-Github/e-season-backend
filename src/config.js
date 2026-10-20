@@ -29,6 +29,12 @@ module.exports = {
     maxAttempts: 5,
   },
   sms: {
+    notifylk: {
+      userId: env.NOTIFYLK_USER_ID,
+      apiKey: env.NOTIFYLK_API_KEY,
+      senderId: env.NOTIFYLK_SENDER_ID || 'NotifyDEMO',
+      baseUrl: env.NOTIFYLK_URL || 'https://app.notify.lk/api/v1',
+    },
     textlk: {
       apiToken: env.TEXTLK_API_TOKEN,
       senderId: env.TEXTLK_SENDER_ID || 'TextLKDemo', // must be a sender ID approved on your Text.lk account

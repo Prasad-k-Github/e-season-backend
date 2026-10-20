@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "e_season API",
-    "description": "Sri Lanka Railways season-ticket prototype backend. Flow: OTP -> register -> staff approval -> application -> sandbox pay -> scan.\nDemo staff passwords come from `npm run db:seed` (default ChangeMe#2026).",
+    "description": "Sri Lanka Railways season-ticket backend.\n\nFlow: Request OTP -> Verify OTP -> Register (multipart) -> Staff verification (officer for government passengers, then station staff) -> Create application -> Officer approval (government) -> Pay (sandbox) -> Scan QR.\n\nRun folders top-down. Tokens and IDs are saved to collection variables by test scripts. Staff passwords come from `npm run db:seed`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Public",
+      "name": "01 Public",
       "item": [
         {
           "name": "Health",
@@ -27,6 +27,7 @@
               "type": "noauth"
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -55,11 +56,12 @@
                 "stations"
               ]
             },
+            "description": "Also seeds {{fromStationId}} / {{toStationId}} (Colombo Fort / Kandy when present).",
             "auth": {
               "type": "noauth"
-            },
-            "description": "Saves the first and last station ids into fromStationId / toStationId."
+            }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -67,8 +69,12 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const s = pm.response.json();",
-                  "if (s.length) { pm.collectionVariables.set('fromStationId', s[0].id); pm.collectionVariables.set('toStationId', s[s.length-1].id); }"
+                  "const j = pm.response.json();",
+                  "pm.test('has stations', () => pm.expect(j).to.be.an('array').that.is.not.empty);",
+                  "const byName = n => (j.find(s => s.name === n) || {}).id;",
+                  "const a = byName('Colombo Fort') || j[0].id, b = byName('Kandy') || j[1].id;",
+                  "pm.collectionVariables.set('fromStationId', a);",
+                  "pm.collectionVariables.set('toStationId', b);"
                 ]
               }
             }
@@ -89,10 +95,12 @@
                 "institutions"
               ]
             },
+            "description": "Names only - the organisation code is secret.",
             "auth": {
               "type": "noauth"
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -100,15 +108,15 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const i = pm.response.json();",
-                  "if (i.length) pm.collectionVariables.set('institutionId', i[0].id);"
+                  "const j = pm.response.json();",
+                  "if (j.length) pm.collectionVariables.set('institutionId', j[0].id);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Ticket public key",
+          "name": "Ticket public key (PEM)",
           "request": {
             "method": "GET",
             "header": [],
@@ -126,13 +134,48 @@
               "type": "noauth"
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('is PEM', () => pm.expect(pm.response.text()).to.include('BEGIN PUBLIC KEY'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unknown route -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/does-not-exist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "does-not-exist"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));",
+                  "pm.test('error.code is not_found', () => pm.expect(pm.response.json().error.code).to.eql('not_found'));"
                 ]
               }
             }
@@ -141,308 +184,867 @@
       ]
     },
     {
-      "name": "Auth",
+      "name": "02 Auth",
       "item": [
         {
-          "name": "Request OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/otp/request",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "otp",
-                "request"
+          "name": "Passenger OTP",
+          "item": [
+            {
+              "name": "Request OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/otp/request",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "request"
+                  ]
+                },
+                "description": "With the mock provider (non-prod) the response includes `devCode`, saved to {{otpCode}}. 60s cooldown per phone.",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('has expiresInSeconds', () => pm.expect(j.expiresInSeconds).to.be.a('number'));",
+                      "if (j.devCode) pm.collectionVariables.set('otpCode', j.devCode);"
+                    ]
+                  }
+                }
               ]
             },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Non-production: the response includes devCode, which is saved to otpCode automatically."
-          },
-          "event": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "if (j.devCode) pm.collectionVariables.set('otpCode', j.devCode);"
-                ]
-              }
+              "name": "Verify OTP",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/otp/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "verify"
+                  ]
+                },
+                "description": "Returns `registrationToken` for new numbers, or `token` for existing accounts.",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"{{otpCode}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "if (j.registered) { pm.collectionVariables.set('userToken', j.token); } else { pm.collectionVariables.set('registrationToken', j.registrationToken); }",
+                      "pm.test('token returned', () => pm.expect(j.token || j.registrationToken).to.be.a('string'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Request OTP - invalid phone",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/otp/request",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "request"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"12345\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error.code is bad_phone', () => pm.expect(pm.response.json().error.code).to.eql('bad_phone'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify OTP - malformed code",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/otp/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "verify"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"abc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error.code is bad_code', () => pm.expect(pm.response.json().error.code).to.eql('bad_code'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verify OTP - wrong code",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/otp/verify",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "otp",
+                    "verify"
+                  ]
+                },
+                "description": "Counts toward the 5-attempt lockout; run after a fresh Request OTP.",
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"000000\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                    ]
+                  }
+                }
+              ]
             }
           ]
         },
         {
-          "name": "Verify OTP",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/otp/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "otp",
-                "verify"
+          "name": "Login",
+          "item": [
+            {
+              "name": "Passenger login (phone + password)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"password\": \"{{passengerPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.collectionVariables.set('userToken', j.token);",
+                      "pm.test('has verificationStatus', () => pm.expect(j.verificationStatus).to.be.a('string'));"
+                    ]
+                  }
+                }
               ]
             },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"code\": \"{{otpCode}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Existing account returns `token` (saved as userToken). New number returns `registrationToken` (saved as registrationToken)."
-          },
-          "event": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const j = pm.response.json();",
-                  "if (j.token) pm.collectionVariables.set('userToken', j.token);",
-                  "if (j.registrationToken) pm.collectionVariables.set('registrationToken', j.registrationToken);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Passenger login (phone + password)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('userToken', pm.response.json().token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"password\": \"{{passengerPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "name": "Passenger login - wrong password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"{{phone}}\",\n  \"password\": \"wrong-password\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
                 }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Staff login - admin",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/staff/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "staff",
-                "login"
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                    ]
+                  }
+                }
               ]
             },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('adminToken', pm.response.json().token);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Staff login - station staff",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/staff/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "staff",
-                "login"
+              "name": "Staff login - admin",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/staff/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "staff",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('has token', () => pm.expect(j.token).to.be.a('string'));",
+                      "pm.collectionVariables.set('adminToken', j.token);"
+                    ]
+                  }
+                }
               ]
             },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{stationEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('stationToken', pm.response.json().token);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Staff login - institution officer",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/staff/login",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "staff",
-                "login"
+              "name": "Staff login - station staff",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/staff/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "staff",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{stationEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('has token', () => pm.expect(j.token).to.be.a('string'));",
+                      "pm.collectionVariables.set('stationToken', j.token);"
+                    ]
+                  }
+                }
               ]
             },
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"{{officerEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
             {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('officerToken', pm.response.json().token);"
-                ]
-              }
+              "name": "Staff login - institution officer",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/staff/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "staff",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{officerEmail}}\",\n  \"password\": \"{{staffPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('has token', () => pm.expect(j.token).to.be.a('string'));",
+                      "pm.collectionVariables.set('officerToken', j.token);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Staff login - wrong password",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/auth/staff/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "staff",
+                    "login"
+                  ]
+                },
+                "auth": {
+                  "type": "noauth"
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"wrong\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                    ]
+                  }
+                }
+              ]
             }
           ]
         }
       ]
     },
     {
-      "name": "Registration",
-      "description": "Run Auth > Request OTP and Verify OTP with a new phone number first to get a registrationToken.",
+      "name": "03 Registration",
       "item": [
         {
           "name": "Register - private passenger",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "register"
+              ]
+            },
+            "description": "Run \"Verify OTP\" first. Pick 3 image files (JPEG/PNG) before sending. Phone comes from the token.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{registrationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "passengerType",
+                  "value": "private",
+                  "type": "text"
+                },
+                {
+                  "key": "fullName",
+                  "value": "Nimal Perera",
+                  "type": "text"
+                },
+                {
+                  "key": "nic",
+                  "value": "199012345678",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{passengerPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "address",
+                  "value": "12 Galle Road, Colombo 03",
+                  "type": "text"
+                },
+                {
+                  "key": "email",
+                  "value": "nimal@example.com",
+                  "type": "text"
+                },
+                {
+                  "key": "dateOfBirth",
+                  "value": "1990-05-17",
+                  "type": "text"
+                },
+                {
+                  "key": "preferredLanguage",
+                  "value": "en",
+                  "type": "text"
+                },
+                {
+                  "key": "consent",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "employerName",
+                  "value": "ABC Holdings (Pvt) Ltd",
+                  "type": "text"
+                },
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG profile photo"
+                },
+                {
+                  "key": "nicFront",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG NIC front"
+                },
+                {
+                  "key": "nicBack",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG NIC back"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('userToken', j.token);",
+                  "pm.collectionVariables.set('userId', j.userId);",
+                  "pm.collectionVariables.set('pendingUserId', j.userId);",
+                  "pm.test('has reference number', () => pm.expect(j.referenceNumber).to.match(/^ES-/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register - government passenger",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "register"
+              ]
+            },
+            "description": "Run admin \"Create institution\" first: it saves {{adminInstitutionId}} and {{orgAuthCode}}.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{registrationToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "passengerType",
+                  "value": "government",
+                  "type": "text"
+                },
+                {
+                  "key": "fullName",
+                  "value": "Nimal Perera",
+                  "type": "text"
+                },
+                {
+                  "key": "nic",
+                  "value": "199012345678",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{passengerPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "address",
+                  "value": "12 Galle Road, Colombo 03",
+                  "type": "text"
+                },
+                {
+                  "key": "email",
+                  "value": "nimal@example.com",
+                  "type": "text"
+                },
+                {
+                  "key": "dateOfBirth",
+                  "value": "1990-05-17",
+                  "type": "text"
+                },
+                {
+                  "key": "preferredLanguage",
+                  "value": "en",
+                  "type": "text"
+                },
+                {
+                  "key": "consent",
+                  "value": "true",
+                  "type": "text"
+                },
+                {
+                  "key": "institutionId",
+                  "value": "{{adminInstitutionId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "orgAuthCode",
+                  "value": "{{orgAuthCode}}",
+                  "type": "text"
+                },
+                {
+                  "key": "employeeNo",
+                  "value": "EMP-1001",
+                  "type": "text"
+                },
+                {
+                  "key": "designation",
+                  "value": "Clerk",
+                  "type": "text"
+                },
+                {
+                  "key": "photo",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG profile photo"
+                },
+                {
+                  "key": "nicFront",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG NIC front"
+                },
+                {
+                  "key": "nicBack",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG/PNG NIC back"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('userToken', j.token);",
+                  "pm.collectionVariables.set('userId', j.userId);",
+                  "pm.collectionVariables.set('pendingUserId', j.userId);",
+                  "pm.test('has reference number', () => pm.expect(j.referenceNumber).to.match(/^ES-/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register - missing token -> 401",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "register"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "passengerType",
+                  "value": "private",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Register - validation error",
           "request": {
             "method": "POST",
             "header": [],
@@ -475,199 +1077,27 @@
                   "type": "text"
                 },
                 {
-                  "key": "password",
-                  "value": "Passw0rd#123",
-                  "type": "text"
-                },
-                {
                   "key": "fullName",
-                  "value": "Nimal Perera",
+                  "value": "X",
                   "type": "text"
                 },
                 {
                   "key": "nic",
-                  "value": "199012345678",
+                  "value": "bad",
                   "type": "text"
-                },
-                {
-                  "key": "address",
-                  "value": "12 Galle Road, Colombo",
-                  "type": "text"
-                },
-                {
-                  "key": "email",
-                  "value": "nimal@example.com",
-                  "type": "text"
-                },
-                {
-                  "key": "dateOfBirth",
-                  "value": "1990-05-10",
-                  "type": "text"
-                },
-                {
-                  "key": "preferredLanguage",
-                  "value": "en",
-                  "type": "text"
-                },
-                {
-                  "key": "consent",
-                  "value": "true",
-                  "type": "text"
-                },
-                {
-                  "key": "employerName",
-                  "value": "ABC Pvt Ltd",
-                  "type": "text"
-                },
-                {
-                  "key": "photo",
-                  "type": "file",
-                  "src": [],
-                  "description": "Profile photo"
-                },
-                {
-                  "key": "nicFront",
-                  "type": "file",
-                  "src": [],
-                  "description": "NIC front"
-                },
-                {
-                  "key": "nicBack",
-                  "type": "file",
-                  "src": [],
-                  "description": "NIC back"
                 }
               ]
-            },
-            "description": "Attach JPEG/PNG files (max 5 MB each) for photo, nicFront, nicBack. Phone comes from the OTP token."
+            }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
-                  "const j = pm.response.json();",
-                  "if (j.token) pm.collectionVariables.set('userToken', j.token);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Register - government passenger",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/register",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "register"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{registrationToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "passengerType",
-                  "value": "government",
-                  "type": "text"
-                },
-                {
-                  "key": "password",
-                  "value": "Passw0rd#123",
-                  "type": "text"
-                },
-                {
-                  "key": "fullName",
-                  "value": "Kamala Silva",
-                  "type": "text"
-                },
-                {
-                  "key": "nic",
-                  "value": "199112345678",
-                  "type": "text"
-                },
-                {
-                  "key": "address",
-                  "value": "45 Temple Road, Kandy",
-                  "type": "text"
-                },
-                {
-                  "key": "preferredLanguage",
-                  "value": "en",
-                  "type": "text"
-                },
-                {
-                  "key": "consent",
-                  "value": "true",
-                  "type": "text"
-                },
-                {
-                  "key": "institutionId",
-                  "value": "{{institutionId}}",
-                  "type": "text"
-                },
-                {
-                  "key": "orgAuthCode",
-                  "value": "DEMO-EDU-2026",
-                  "type": "text"
-                },
-                {
-                  "key": "employeeNo",
-                  "value": "EMP-1001",
-                  "type": "text"
-                },
-                {
-                  "key": "designation",
-                  "value": "Teacher",
-                  "type": "text"
-                },
-                {
-                  "key": "photo",
-                  "type": "file",
-                  "src": [],
-                  "description": "Profile photo"
-                },
-                {
-                  "key": "nicFront",
-                  "type": "file",
-                  "src": [],
-                  "description": "NIC front"
-                },
-                {
-                  "key": "nicBack",
-                  "type": "file",
-                  "src": [],
-                  "description": "NIC back"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
-                  "const j = pm.response.json();",
-                  "if (j.token) pm.collectionVariables.set('userToken', j.token);"
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is validation_error', () => pm.expect(pm.response.json().error.code).to.eql('validation_error'));"
                 ]
               }
             }
@@ -676,7 +1106,7 @@
       ]
     },
     {
-      "name": "Passenger",
+      "name": "04 Passenger account",
       "item": [
         {
           "name": "Get my profile",
@@ -704,13 +1134,49 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('has id', () => pm.expect(j.id).to.be.a('string'));",
+                  "pm.collectionVariables.set('userId', j.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my profile - no token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 401', () => pm.response.to.have.status(401));"
                 ]
               }
             }
@@ -718,17 +1184,6 @@
         },
         {
           "name": "Change password",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
           "request": {
             "method": "PUT",
             "header": [
@@ -737,6 +1192,18 @@
                 "value": "application/json"
               }
             ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "password"
+              ]
+            },
+            "description": "After success the password is NewPassw0rd#1. Run \"Change password (restore)\" to revert.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -755,7 +1222,32 @@
                   "language": "json"
                 }
               }
-            },
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('changed', () => pm.expect(pm.response.json().changed).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change password (restore)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/api/me/password",
               "host": [
@@ -766,11 +1258,97 @@
                 "me",
                 "password"
               ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"NewPassw0rd#1\",\n  \"newPassword\": \"{{passengerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             }
-          }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         },
         {
-          "name": "Resubmit documents",
+          "name": "Change password - wrong current",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "password"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"nope-nope\",\n  \"newPassword\": \"NewPassw0rd#1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is wrong_password', () => pm.expect(pm.response.json().error.code).to.eql('wrong_password'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resubmit documents (rejected accounts only)",
           "request": {
             "method": "POST",
             "header": [],
@@ -785,6 +1363,7 @@
                 "resubmit"
               ]
             },
+            "description": "Upload at least one corrected image. Returns 409 not_rejected unless the account was rejected.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -802,30 +1381,31 @@
                   "key": "photo",
                   "type": "file",
                   "src": [],
-                  "description": "Profile photo"
+                  "description": "JPEG/PNG profile photo"
                 },
                 {
                   "key": "nicFront",
                   "type": "file",
                   "src": [],
-                  "description": "NIC front"
+                  "description": "JPEG/PNG NIC front"
                 },
                 {
                   "key": "nicBack",
                   "type": "file",
                   "src": [],
-                  "description": "NIC back"
+                  "description": "JPEG/PNG NIC back"
                 }
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('200 or 409', () => pm.expect([200, 409]).to.include(pm.response.code));"
                 ]
               }
             }
@@ -846,6 +1426,7 @@
                 "me"
               ]
             },
+            "description": "DESTRUCTIVE: anonymises the account and revokes tickets.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -857,6 +1438,7 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -868,7 +1450,12 @@
               }
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "05 Applications & payment",
+      "item": [
         {
           "name": "Fare quote",
           "request": {
@@ -910,13 +1497,71 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('fareLkr number', () => pm.expect(j.fareLkr).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Fare quote - same station",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fares/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fares",
+                "quote"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{fromStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is same_station', () => pm.expect(pm.response.json().error.code).to.eql('same_station'));"
                 ]
               }
             }
@@ -924,6 +1569,73 @@
         },
         {
           "name": "Create application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "applications"
+              ]
+            },
+            "description": "startDate = 1st of next month (set by pre-request script). Government: monthly, 1-3 months; private: weekly/monthly/quarterly. Requires a verified account.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{toStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\",\n  \"startDate\": \"{{startDate}}\",\n  \"durationMonths\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = new Date(); const n = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));",
+                  "pm.collectionVariables.set('startDate', n.toISOString().slice(0, 10));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('applicationId', j.id);",
+                  "pm.test('has status', () => pm.expect(j.status).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create application - validation error",
           "request": {
             "method": "POST",
             "header": [
@@ -954,7 +1666,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{toStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\",\n  \"startDate\": \"2026-11-01\",\n  \"durationMonths\": 1\n}",
+              "raw": "{\n  \"fromStationId\": \"\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -962,14 +1674,15 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('applicationId', pm.response.json().id);"
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is validation_error', () => pm.expect(pm.response.json().error.code).to.eql('validation_error'));"
                 ]
               }
             }
@@ -1001,13 +1714,15 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
                 ]
               }
             }
@@ -1040,6 +1755,7 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1047,6 +1763,46 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get application - not found",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/applications/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{userToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
                 ]
               }
             }
@@ -1080,20 +1836,22 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('cancelled', () => pm.expect(pm.response.json().status).to.eql('cancelled'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Pay for application (sandbox)",
+          "name": "Pay (sandbox - success)",
           "request": {
             "method": "POST",
             "header": [
@@ -1114,6 +1872,7 @@
                 "pay"
               ]
             },
+            "description": "Application must be approved_awaiting_payment. Saves ticketId and qrToken.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1132,9 +1891,9 @@
                   "language": "json"
                 }
               }
-            },
-            "description": "Use simulate: \"fail\" to get a 402 declined payment (non-production only)."
+            }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1143,14 +1902,16 @@
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));",
                   "const j = pm.response.json();",
-                  "if (j.ticket) { pm.collectionVariables.set('ticketId', j.ticket.id); pm.collectionVariables.set('qrToken', j.ticket.qrToken); }"
+                  "pm.test('paid', () => pm.expect(j.paid).to.eql(true));",
+                  "pm.collectionVariables.set('ticketId', j.ticket.id);",
+                  "pm.collectionVariables.set('qrToken', j.ticket.qrToken);"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Pay for application (simulate failure)",
+          "name": "Pay (sandbox - simulate failure)",
           "request": {
             "method": "POST",
             "header": [
@@ -1171,6 +1932,7 @@
                 "pay"
               ]
             },
+            "description": "Non-production only. Returns 402 and leaves the application payable.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -1191,18 +1953,25 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 402', () => pm.response.to.have.status(402));"
+                  "pm.test('Status is 402', () => pm.response.to.have.status(402));",
+                  "pm.test('not paid', () => pm.expect(pm.response.json().paid).to.eql(false));"
                 ]
               }
             }
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "06 Tickets",
+      "item": [
         {
           "name": "List my tickets",
           "request": {
@@ -1229,6 +1998,7 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1236,8 +2006,9 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const t = pm.response.json();",
-                  "if (t.length) { pm.collectionVariables.set('ticketId', t[0].id); pm.collectionVariables.set('qrToken', t[0].qrToken); }"
+                  "const j = pm.response.json();",
+                  "pm.test('array', () => pm.expect(j).to.be.an('array'));",
+                  "if (j.length) { pm.collectionVariables.set('ticketId', j[0].id); pm.collectionVariables.set('qrToken', j[0].qrToken); }"
                 ]
               }
             }
@@ -1270,52 +2041,7 @@
               ]
             }
           },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Staff",
-      "item": [
-        {
-          "name": "List pending users",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/users/pending",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "users",
-                "pending"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{stationToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "Works with station, officer or admin token. Saves first pending user id to pendingUserId."
-          },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1323,380 +2049,27 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const u = pm.response.json();",
-                  "if (Array.isArray(u) && u.length) pm.collectionVariables.set('pendingUserId', u[0].id);"
+                  "const j = pm.response.json();",
+                  "pm.test('has qrToken', () => pm.expect(j.qrToken).to.be.a('string'));"
                 ]
               }
             }
           ]
         },
         {
-          "name": "Get user detail",
+          "name": "Get ticket - not found",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}",
+              "raw": "{{baseUrl}}/api/tickets/00000000-0000-0000-0000-000000000000",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "staff",
-                "users",
-                "{{pendingUserId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{stationToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "View user document",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/docs/photo",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "users",
-                "{{pendingUserId}}",
-                "docs",
-                "photo"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{stationToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "Type: photo | nic_front | nic_back. Every view is audit-logged."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Institution decision on user",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/institution-decision",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "users",
-                "{{pendingUserId}}",
-                "institution-decision"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{officerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"decision\": \"approved\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Institution officer only. decision: approved | rejected (reason required on reject)."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Verification decision on user",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "users",
-                "{{pendingUserId}}",
-                "verification-decision"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{stationToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"decision\": \"approved\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Station staff only."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Verification decision - reject",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "users",
-                "{{pendingUserId}}",
-                "verification-decision"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{stationToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"decision\": \"rejected\",\n  \"reason\": \"NIC image is unreadable\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "List pending applications (officer)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/applications/pending",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "applications",
-                "pending"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{officerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
-                  "const a = pm.response.json();",
-                  "if (Array.isArray(a) && a.length) pm.collectionVariables.set('applicationId', a[0].id);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Application decision (officer)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/applications/{{applicationId}}/decision",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
-                "applications",
-                "{{applicationId}}",
-                "decision"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{officerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"decision\": \"approved\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Scan ticket",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/staff/tickets/scan",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "staff",
                 "tickets",
-                "scan"
+                "00000000-0000-0000-0000-000000000000"
               ]
             },
             "auth": {
@@ -1704,29 +2077,20 @@
               "bearer": [
                 {
                   "key": "token",
-                  "value": "{{stationToken}}",
+                  "value": "{{userToken}}",
                   "type": "string"
                 }
               ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"token\": \"{{qrToken}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "description": "Result: valid | expired | revoked | invalid. Station staff or admin."
+            }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
                 ]
               }
             }
@@ -1735,10 +2099,1091 @@
       ]
     },
     {
-      "name": "Admin",
+      "name": "07 Staff",
       "item": [
         {
-          "name": "List institutions",
+          "name": "Passenger review",
+          "item": [
+            {
+              "name": "List pending users (station staff)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "pending"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('array', () => pm.expect(j).to.be.an('array'));",
+                      "if (j.length) pm.collectionVariables.set('pendingUserId', j[0].id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "List pending users (institution officer)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "pending"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "if (j.length) pm.collectionVariables.set('pendingGovUserId', j[0].id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Get user detail",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('has documents', () => pm.expect(j.documents).to.be.an('array'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "View document - photo",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/docs/photo",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "docs",
+                    "photo"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "View document - NIC front",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/docs/nic_front",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "docs",
+                    "nic_front"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "View document - NIC back",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/docs/nic_back",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "docs",
+                    "nic_back"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "View document - invalid type",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/docs/passport",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "docs",
+                    "passport"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Institution decision - approve (officer)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingGovUserId}}/institution-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingGovUserId}}",
+                    "institution-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"approved\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('moves to pending_verification', () => pm.expect(pm.response.json().status).to.eql('pending_verification'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Institution decision - reject (officer)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingGovUserId}}/institution-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingGovUserId}}",
+                    "institution-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"rejected\",\n  \"reason\": \"Not an employee of this institution\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verification decision - approve (station staff)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "verification-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"approved\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('verified', () => pm.expect(pm.response.json().status).to.eql('verified'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verification decision - reject (station staff)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "verification-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"rejected\",\n  \"reason\": \"NIC image is unreadable\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Verification decision - reject without reason",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "verification-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"rejected\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                      "pm.test('error.code is validation_error', () => pm.expect(pm.response.json().error.code).to.eql('validation_error'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Wrong role -> 403 (officer on verification)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/{{pendingUserId}}/verification-decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "{{pendingUserId}}",
+                    "verification-decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"approved\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Passenger token on staff route -> 401",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/users/pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "users",
+                    "pending"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{userToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 401', () => pm.response.to.have.status(401));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Application review (officer)",
+          "item": [
+            {
+              "name": "List pending applications",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/applications/pending",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "applications",
+                    "pending"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "if (j.length) pm.collectionVariables.set('applicationId', j[0].id);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Application decision - approve",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/applications/{{applicationId}}/decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "applications",
+                    "{{applicationId}}",
+                    "decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"approved\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('awaiting payment', () => pm.expect(pm.response.json().status).to.eql('approved_awaiting_payment'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Application decision - reject",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/applications/{{applicationId}}/decision",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "applications",
+                    "{{applicationId}}",
+                    "decision"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decision\": \"rejected\",\n  \"reason\": \"Employment could not be confirmed\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Ticket scanning",
+          "item": [
+            {
+              "name": "Scan ticket (station staff)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/tickets/scan",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "tickets",
+                    "scan"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{qrToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "const j = pm.response.json();",
+                      "pm.test('known result', () => pm.expect(['valid', 'expired', 'revoked', 'invalid']).to.include(j.result));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Scan ticket (admin)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/tickets/scan",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "tickets",
+                    "scan"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{adminToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{qrToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Scan forged ticket -> invalid",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/tickets/scan",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "tickets",
+                    "scan"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{stationToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"aaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbb.cccccccccccc\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                      "pm.test('invalid', () => pm.expect(pm.response.json().result).to.eql('invalid'));"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Scan ticket - officer forbidden",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/staff/tickets/scan",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "staff",
+                    "tickets",
+                    "scan"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{officerToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"token\": \"{{qrToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Status is 403', () => pm.response.to.have.status(403));"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 Admin",
+      "item": [
+        {
+          "name": "List institutions (with org codes)",
           "request": {
             "method": "GET",
             "header": [],
@@ -1764,13 +3209,15 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
                 ]
               }
             }
@@ -1809,7 +3256,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Ministry of Transport\"\n}",
+              "raw": "{\n  \"name\": \"Test Institution {{$randomInt}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1817,6 +3264,7 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1825,7 +3273,63 @@
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));",
                   "const j = pm.response.json();",
-                  "if (j.id) pm.collectionVariables.set('adminInstitutionId', j.id);"
+                  "pm.collectionVariables.set('adminInstitutionId', j.id);",
+                  "pm.collectionVariables.set('orgAuthCode', j.orgAuthCode);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create institution - name too short",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/institutions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "institutions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"ab\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is validation_error', () => pm.expect(pm.response.json().error.code).to.eql('validation_error'));"
                 ]
               }
             }
@@ -1858,13 +3362,15 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
                 ]
               }
             }
@@ -1903,7 +3409,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Sunil Fernando\",\n  \"email\": \"sunil@eseason.test\",\n  \"password\": \"ChangeMe#2026\",\n  \"role\": \"station_staff\",\n  \"stationId\": \"{{fromStationId}}\"\n}",
+              "raw": "{\n  \"fullName\": \"New Station Staff\",\n  \"email\": \"station{{$randomInt}}@eseason.test\",\n  \"password\": \"ChangeMe#2026\",\n  \"role\": \"station_staff\",\n  \"stationId\": \"{{fromStationId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1911,6 +3417,7 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1956,7 +3463,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fullName\": \"Anura Jayasuriya\",\n  \"email\": \"anura@eseason.test\",\n  \"password\": \"ChangeMe#2026\",\n  \"role\": \"institution_officer\",\n  \"institutionId\": \"{{adminInstitutionId}}\"\n}",
+              "raw": "{\n  \"fullName\": \"New Officer\",\n  \"email\": \"officer{{$randomInt}}@eseason.test\",\n  \"password\": \"ChangeMe#2026\",\n  \"role\": \"institution_officer\",\n  \"institutionId\": \"{{adminInstitutionId}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1964,6 +3471,7 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -1971,6 +3479,61 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create staff - officer without institution",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "staff"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fullName\": \"Bad Officer\",\n  \"email\": \"bad{{$randomInt}}@eseason.test\",\n  \"password\": \"ChangeMe#2026\",\n  \"role\": \"institution_officer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is validation_error', () => pm.expect(pm.response.json().error.code).to.eql('validation_error'));"
                 ]
               }
             }
@@ -2009,7 +3572,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Test Station\",\n  \"line\": \"Main Line\",\n  \"hasSeatReservation\": false\n}",
+              "raw": "{\n  \"name\": \"Test Station {{$randomInt}}\",\n  \"line\": \"Main Line\",\n  \"hasSeatReservation\": false\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2017,13 +3580,16 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));",
+                  "const j = pm.response.json();",
+                  "pm.collectionVariables.set('newStationId', j.id);"
                 ]
               }
             }
@@ -2062,15 +3628,15 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{toStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\",\n  \"passengerType\": null,\n  \"amountLkr\": 1500,\n  \"effectiveFrom\": \"2026-01-01\"\n}",
+              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{newStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\",\n  \"passengerType\": \"private\",\n  \"amountLkr\": 1500,\n  \"effectiveFrom\": \"2026-01-01\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
                 }
               }
-            },
-            "description": "passengerType: government | private | null (both)."
+            }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -2078,6 +3644,61 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create fare - same station",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/fares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "fares"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromStationId\": \"{{fromStationId}}\",\n  \"toStationId\": \"{{fromStationId}}\",\n  \"ticketClass\": \"third\",\n  \"period\": \"monthly\",\n  \"amountLkr\": 1500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));",
+                  "pm.test('error.code is same_station', () => pm.expect(pm.response.json().error.code).to.eql('same_station'));"
                 ]
               }
             }
@@ -2116,7 +3737,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"monthFor\": \"2026-11-01\",\n  \"opensOn\": \"2026-10-15\",\n  \"closesOn\": \"2026-10-31\"\n}",
+              "raw": "{\n  \"monthFor\": \"2026-12-01\",\n  \"opensOn\": \"2026-11-20\",\n  \"closesOn\": \"2026-11-30\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2124,6 +3745,7 @@
               }
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
@@ -2131,6 +3753,60 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create application window - closes before opens",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/application-windows",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "application-windows"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monthFor\": \"2026-12-01\",\n  \"opensOn\": \"2026-11-30\",\n  \"closesOn\": \"2026-11-20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 400', () => pm.response.to.have.status(400));"
                 ]
               }
             }
@@ -2169,13 +3845,55 @@
               ]
             }
           },
+          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status is 200', () => pm.response.to.have.status(200));"
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin route as station staff -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/staff",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "staff"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{stationToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 403', () => pm.response.to.have.status(403));"
                 ]
               }
             }
@@ -2193,6 +3911,11 @@
     {
       "key": "phone",
       "value": "0771234567",
+      "type": "string"
+    },
+    {
+      "key": "passengerPassword",
+      "value": "Passw0rd#123",
       "type": "string"
     },
     {
@@ -2256,12 +3979,37 @@
       "type": "string"
     },
     {
+      "key": "newStationId",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "institutionId",
       "value": "",
       "type": "string"
     },
     {
       "key": "adminInstitutionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "orgAuthCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pendingUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "pendingGovUserId",
       "value": "",
       "type": "string"
     },
@@ -2281,13 +4029,8 @@
       "type": "string"
     },
     {
-      "key": "pendingUserId",
+      "key": "startDate",
       "value": "",
-      "type": "string"
-    },
-    {
-      "key": "passengerPassword",
-      "value": "Passw0rd#123",
       "type": "string"
     }
   ]
