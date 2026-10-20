@@ -239,7 +239,7 @@ test('role scoping of the staff work queues', async () => {
   assert.equal((await api('POST', `/staff/users/${state.gov.userId}/institution-decision`,
     { token: state.station, json: { decision: 'approved' } })).status, 403);
   assert.equal((await api('POST', `/staff/users/${state.priv.userId}/verification-decision`,
-    { token: state.admin, json: { decision: 'approved' } })).status, 403, 'admins manage the system, they do not approve people');
+    { token: state.station, json: { decision: 'approved' } })).status, 403, 'station staff can no longer approve people');
   assert.equal((await api('GET', '/admin/staff', { token: state.station })).status, 403);
   assert.equal((await api('GET', '/staff/users/pending', { token: state.priv.token })).status, 401, 'passenger token is not a staff token');
 });
@@ -253,11 +253,11 @@ test('unverified passengers cannot apply', async () => {
   assert.equal(r.data.error.code, 'not_verified');
 });
 
-test('government flow: institution approves, then station staff verifies', async () => {
+test('government flow: institution approves, then admin verifies', async () => {
   const gid = state.gov.userId;
   // must be approved by the institution first
   assert.equal((await api('POST', `/staff/users/${gid}/verification-decision`,
-    { token: state.station, json: { decision: 'approved' } })).status, 409);
+    { token: state.admin, json: { decision: 'approved' } })).status, 409);
 
   const noReason = await api('POST', `/staff/users/${gid}/institution-decision`,
     { token: state.edu, json: { decision: 'rejected' } });
@@ -286,7 +286,7 @@ test('station staff can view documents; approval deletes the NIC images', async 
 
   const before = uploadCount();
   for (const id of [pid, state.gov.userId]) {
-    const r = await api('POST', `/staff/users/${id}/verification-decision`, { token: state.station, json: { decision: 'approved' } });
+    const r = await api('POST', `/staff/users/${id}/verification-decision`, { token: state.admin, json: { decision: 'approved' } });
     assert.equal(r.data.status, 'verified');
   }
   assert.equal(uploadCount(), before - 4, 'two NIC images per passenger are deleted on approval');
@@ -416,10 +416,10 @@ test('rejection with a reason, then resubmission', async () => {
   const r = await registerPrivate({ phone: '0775550001', nic: '931234567V', name: 'Amal Fernando' });
   assert.equal(r.status, 201);
   const id = r.data.userId;
-  const noReason = await api('POST', `/staff/users/${id}/verification-decision`, { token: state.station, json: { decision: 'rejected' } });
+  const noReason = await api('POST', `/staff/users/${id}/verification-decision`, { token: state.admin, json: { decision: 'rejected' } });
   assert.equal(noReason.status, 400);
   const rej = await api('POST', `/staff/users/${id}/verification-decision`,
-    { token: state.station, json: { decision: 'rejected', reason: 'NIC photo is blurry' } });
+    { token: state.admin, json: { decision: 'rejected', reason: 'NIC photo is blurry' } });
   assert.equal(rej.data.status, 'rejected');
 
   const me = await api('GET', '/me', { token: r.data.token });

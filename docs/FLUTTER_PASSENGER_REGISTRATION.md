@@ -402,13 +402,13 @@ Server-side failures delete the uploaded files, so it is safe to retry without c
 | Status | Meaning | Show |
 |---|---|---|
 | `pending_institution_approval` | Government passenger. Waiting for the institution officer | "Your institution is reviewing your request" |
-| `pending_verification` | Waiting for station staff to check the NIC and photo | "Station staff will verify your identity" |
+| `pending_verification` | Waiting for an admin to check the NIC and photo | "An admin will verify your identity" |
 | `verified` | Approved | Enable applying for tickets |
 | `rejected` | Rejected. See `rejectionReason` from `GET /me` | Show the reason and a "Resubmit documents" button (`POST /me/resubmit`, multipart, same three image fields) |
 
 Flow by type:
-- **Private:** `pending_verification` → (station staff) → `verified`
-- **Government:** `pending_institution_approval` → (officer) → `pending_verification` → (station staff) → `verified`
+- **Private:** `pending_verification` → (admin) → `verified`
+- **Government:** `pending_institution_approval` → (officer) → `pending_verification` → (admin) → `verified`
 
 Poll `GET /me` (Bearer user token) when the status screen opens or on pull-to-refresh. There are no push notifications yet.
 

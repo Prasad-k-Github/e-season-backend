@@ -50,8 +50,8 @@ Passenger app                                        Staff / officers
 POST /auth/otp/request  ─► code (mock)
 POST /auth/otp/verify   ─► registrationToken (new)  or  token (existing account)
 POST /register (multipart: details + 3 images)
-   private    ─► pending_verification ───────────► station staff: verification-decision ─► verified
-   government ─► pending_institution_approval ───► officer: institution-decision ─► pending_verification ─► (station staff) ─► verified
+   private    ─► pending_verification ───────────► admin: verification-decision ─► verified
+   government ─► pending_institution_approval ───► officer: institution-decision ─► pending_verification ─► (admin) ─► verified
 POST /fares/quote, POST /applications
    private    ─► approved_awaiting_payment
    government ─► pending_institution_approval ───► officer: applications/:id/decision ─► approved_awaiting_payment
@@ -94,7 +94,7 @@ The phone number comes from the verified OTP, not from the form.
 |---|---|
 | `GET /staff/users/pending`, `GET /staff/users/:id`, `GET /staff/users/:id/docs/:type` | station staff, institution officer (own institution only), admin |
 | `POST /staff/users/:id/institution-decision {decision, reason?}` | institution officer |
-| `POST /staff/users/:id/verification-decision {decision, reason?}` | station staff |
+| `POST /staff/users/:id/verification-decision {decision, reason?}` | admin |
 | `GET /staff/applications/pending`, `POST /staff/applications/:id/decision` | institution officer |
 | `POST /staff/tickets/scan {token}` | station staff, admin |
 

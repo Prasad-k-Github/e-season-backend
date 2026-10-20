@@ -155,7 +155,7 @@ router.get('/staff/users/:id/docs/:type', anyStaff, h(async (req, res) => {
 router.post('/staff/users/:id/institution-decision', requireStaff('institution_officer'), h(async (req, res) => {
   res.json(await staffSvc.decideInstitution(req.staff, req.params.id, req.body));
 }));
-router.post('/staff/users/:id/verification-decision', requireStaff('station_staff'), h(async (req, res) => {
+router.post('/staff/users/:id/verification-decision', requireStaff('admin'), h(async (req, res) => {
   res.json(await staffSvc.decideVerification(req.staff, req.params.id, req.body));
 }));
 

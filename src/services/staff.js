@@ -125,7 +125,7 @@ async function decideInstitution(officer, userId, body) {
   return { status: decision === 'approved' ? 'pending_verification' : 'rejected' };
 }
 
-/** Station staff: check NIC + photo. Approval deletes the NIC images (data minimisation). */
+/** Admin: final identity check of NIC + photo. Approval deletes the NIC images (data minimisation). */
 async function decideVerification(staff, userId, body) {
   const { decision, reason } = decisionSchema.parse(body);
   const now = nowSql();
