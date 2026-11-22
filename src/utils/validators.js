@@ -35,6 +35,13 @@ function isValidEmail(email) {
   return typeof email === 'string' && email.length <= 255 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+/** Trimmed, lower-cased e-mail, or null if it is not a valid address. */
+function normalizeEmail(email) {
+  if (typeof email !== 'string') return null;
+  const t = email.trim().toLowerCase();
+  return isValidEmail(t) ? t : null;
+}
+
 /** Maps the Flutter app's "general" to the DB's "private". */
 function normalizePassengerType(t) {
   if (t === 'government') return 'government';
@@ -50,6 +57,7 @@ module.exports = {
   normalizeNic,
   normalizePhone,
   isValidEmail,
+  normalizeEmail,
   normalizePassengerType,
   isIsoDate,
 };
