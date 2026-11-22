@@ -58,6 +58,7 @@ CREATE TABLE users (
   phone                VARCHAR(15)  NOT NULL,     -- normalised +947XXXXXXXX
   password_hash        VARCHAR(255) NULL,         -- bcrypt; NULL only for accounts made before passwords existed
   email                VARCHAR(255),
+  email_verified_at    DATETIME     NULL,         -- set when the e-mail was confirmed with a code
   date_of_birth        DATE,
   address              TEXT,
   preferred_language   ENUM('en','si','ta') NOT NULL DEFAULT 'en',
@@ -256,4 +257,18 @@ CREATE TABLE IF NOT EXISTS otp_codes (
   created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY idx_otp_phone (phone, created_at)
+) ENGINE=InnoDB;
+
+-- ========== ADDED FOR THE BACKEND: E-MAIL VERIFICATION ==========
+CREATE TABLE IF NOT EXISTS email_verifications (
+  id          CHAR(36)     NOT NULL,
+  email       VARCHAR(255) NOT NULL,
+  phone       VARCHAR(15)  NOT NULL,   -- the verified phone of the person registering
+  code_hash   VARCHAR(255) NOT NULL,   -- the 6-digit code is never stored
+  expires_at  DATETIME     NOT NULL,
+  attempts    TINYINT      NOT NULL DEFAULT 0,
+  consumed_at DATETIME     NULL,
+  created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_email_ver (email, phone, created_at)
 ) ENGINE=InnoDB;

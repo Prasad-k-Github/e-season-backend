@@ -13,6 +13,7 @@
     "db:init": "node scripts/db-init.js",
     "db:seed": "node scripts/seed.js",
     "db:add-passenger-password": "node scripts/add-passenger-password.js",
+    "db:add-email-verification": "node scripts/add-email-verification.js",
     "keys": "node scripts/gen-keys.js",
     "test": "node --test \"test/**/*.test.js\""
   },
@@ -26,6 +27,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.4.0",
     "mysql2": "^3.24.6",
+    "nodemailer": "^10.6.1",
     "zod": "^4.6.7"
   }
 }

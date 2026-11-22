@@ -41,6 +41,21 @@ module.exports = {
       baseUrl: env.TEXTLK_URL || 'https://app.text.lk/api/v3',
     },
   },
+  email: {
+    provider: env.EMAIL_PROVIDER || 'mock', // mock | smtp
+    from: env.EMAIL_FROM || 'E-Season <no-reply@eseason.local>',
+    ttlMinutes: Number(env.EMAIL_CODE_TTL_MINUTES || 10),
+    maxAttempts: 5,
+    // When true, /register refuses accounts whose e-mail was not verified with a code.
+    requireVerification: env.REQUIRE_EMAIL_VERIFICATION === 'true',
+    smtp: {
+      host: env.SMTP_HOST,
+      port: Number(env.SMTP_PORT || 587),
+      secure: env.SMTP_SECURE === 'true', // true for port 465, false for 587 (STARTTLS)
+      user: env.SMTP_USER,
+      pass: env.SMTP_PASS,
+    },
+  },
   ticketKeys: {
     privatePath: path.resolve(env.TICKET_PRIVATE_KEY_PATH || './keys/ticket_private.pem'),
     publicPath: path.resolve(env.TICKET_PUBLIC_KEY_PATH || './keys/ticket_public.pem'),

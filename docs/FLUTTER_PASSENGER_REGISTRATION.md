@@ -1,7 +1,7 @@
 # Flutter implementation guide: passenger registration
 
 Backend: e_season REST API (`/api`). This guide covers everything the Flutter app needs to register a passenger:
-phone OTP, the registration form with image uploads, error handling and what to show after sign-up.
+phone OTP, e-mail verification, the registration form with image uploads, error handling and what to show after sign-up.
 
 ## 1. Flow overview
 
@@ -9,16 +9,23 @@ phone OTP, the registration form with image uploads, error handling and what to 
 [Phone screen] ──POST /auth/otp/request──► SMS code sent
 [OTP screen]   ──POST /auth/otp/verify───►  registered:false  → registrationToken (30 min)
                                             registered:true   → token  (account exists → go to login/home)
-[Details form] ──POST /register (multipart, Bearer registrationToken)──► 201 { token, verificationStatus, ... }
+[E-mail code]  ──POST /auth/email/request──► code e-mailed        (Bearer registrationToken)
+               ──POST /auth/email/verify ──► emailToken (30 min)  (Bearer registrationToken)
+[Details form] ──POST /register (multipart, Bearer registrationToken, + email, emailToken)──► 201 { token, verificationStatus, ... }
 [Status screen]  shows "pending_verification" or "pending_institution_approval"
 ```
 
 | Step | Token you hold | Token you get |
 |---|---|---|
 | OTP verify (new number) | none | `registrationToken` (valid 30 minutes) |
-| Register | `registrationToken` | `token` (user token, valid 7 days) |
+| E-mail verify | `registrationToken` | `emailToken` (valid 30 minutes) |
+| Register | `registrationToken` + `emailToken` | `token` (user token, valid 7 days) |
 
-Keep `registrationToken` in memory only. Save the final user `token` in secure storage.
+Keep `registrationToken` and `emailToken` in memory only. Save the final user `token` in secure storage.
+
+**Where the e-mail step goes in the app.** The e-mail code needs the `registrationToken`, which exists only after the phone OTP
+is verified. If your details screen comes first, collect the e-mail there, then ask for the e-mail code straight after the phone
+OTP screen, and send both `email` and `emailToken` in the final `POST /register`.
 
 ## 2. Setup
 
@@ -184,6 +191,70 @@ Future<OtpResult> verifyOtp(String phone, String code) async {
 }
 ```
 
+## 5b. Step 2b: verify the e-mail
+
+Both calls are JSON and need `Authorization: Bearer <registrationToken>`.
+
+**Send the code.** `POST /auth/email/request`
+
+```json
+{ "email": "kasun@example.com" }
+```
+
+Success `200`: `{ "expiresInSeconds": 600 }`. The server e-mails a 6-digit code. `devCode` is also returned only when the server
+runs with `EMAIL_PROVIDER=mock` outside production; never depend on it in the app.
+
+**Check the code.** `POST /auth/email/verify`
+
+```json
+{ "email": "kasun@example.com", "code": "123456" }
+```
+
+Success `200`: `{ "email": "kasun@example.com", "emailToken": "eyJ...", "expiresInSeconds": 1800 }`. Keep `emailToken` in memory.
+
+| Status | `code` | Show |
+|---|---|---|
+| 400 | `bad_email` | "Enter a valid e-mail address" |
+| 409 | `email_in_use` | "An account with this e-mail already exists" (offer to log in) |
+| 429 | `email_cooldown` | "Please wait a minute before requesting another code" (start a 60 s resend timer) |
+| 502 | `email_failed` | "We couldn't send the e-mail. Try again shortly." (retry is allowed straight away) |
+| 400 | `bad_code` | "The code must be 6 digits" |
+| 400 | `email_code_incorrect` | "Incorrect code" (5 wrong attempts lock the code) |
+| 400 | `email_code_expired` | "Code expired" and offer Resend |
+| 400 | `email_code_missing` | "Request a new code" |
+| 429 | `email_code_locked` | "Too many wrong attempts. Request a new code." |
+
+The code expires after 10 minutes and works once. Tell the person to check their spam folder.
+
+```dart
+Future<int> requestEmailCode(String registrationToken, String email) async {
+  try {
+    final r = await dio.post('/auth/email/request',
+        data: {'email': email.trim()},
+        options: Options(headers: {'Authorization': 'Bearer $registrationToken'}));
+    return r.data['expiresInSeconds'] as int;
+  } on DioException catch (e) {
+    throw toApiError(e);
+  }
+}
+
+/// Returns the emailToken to send with POST /register.
+Future<String> verifyEmailCode(String registrationToken, String email, String code) async {
+  try {
+    final r = await dio.post('/auth/email/verify',
+        data: {'email': email.trim(), 'code': code},
+        options: Options(headers: {'Authorization': 'Bearer $registrationToken'}));
+    return r.data['emailToken'] as String;
+  } on DioException catch (e) {
+    throw toApiError(e);
+  }
+}
+```
+
+UI: show the e-mail the person typed (read-only, with an "Edit" link), a 6-digit field, "Verify" and a 60 s "Resend" timer.
+If they edit the e-mail after verifying, discard the `emailToken` and verify again: the server refuses a token that does
+not match the e-mail in the form (`email_token_mismatch`).
+
 ## 6. Step 3: the registration form
 
 `POST /register` is **`multipart/form-data`**, not JSON. Send `Authorization: Bearer <registrationToken>`.
@@ -200,7 +271,8 @@ The phone number is taken from the OTP token. Do not send it (if you do, it must
 | `nic` | yes | old: 9 digits + `V`/`X` (e.g. `912345678V`), new: 12 digits (e.g. `199012345678`) |
 | `address` | yes | 3 to 500 characters |
 | `consent` | yes | must be the string `true` (user ticks the data-collection notice) |
-| `email` | no | valid e-mail, max 255 |
+| `email` | no (yes when the server runs with `REQUIRE_EMAIL_VERIFICATION=true`) | valid e-mail, max 255. Stored lower-cased |
+| `emailToken` | with `email` | the token from `POST /auth/email/verify` (step 5b). Always checked when sent |
 | `dateOfBirth` | no | `YYYY-MM-DD` |
 | `preferredLanguage` | no | `en`, `si` or `ta` (default `en`) |
 | `photo` (or `profilePhoto`) | yes | file, JPEG or PNG, max 5 MB |
@@ -311,6 +383,7 @@ Future<RegisterResult> register({
   required XFile nicFront,
   required XFile nicBack,
   String? email,
+  String? emailToken,         // from verifyEmailCode()
   String? dateOfBirth,        // yyyy-MM-dd
   String preferredLanguage = 'en',
   // government
@@ -330,6 +403,7 @@ Future<RegisterResult> register({
     'consent': 'true',
     'preferredLanguage': preferredLanguage,
     if (email != null && email.isNotEmpty) 'email': email.trim(),
+    if (emailToken != null) 'emailToken': emailToken,
     if (dateOfBirth != null) 'dateOfBirth': dateOfBirth,
     if (passengerType == 'government') ...{
       'institutionId': institutionId,
@@ -388,6 +462,9 @@ await storage.write(key: 'user_token', value: result.token);
 | 400 | `bad_file_type` | File isn't a real JPEG or PNG |
 | 400 | `upload_error` | File too large (over 5 MB) or too many files |
 | 400 | `phone_mismatch` | Only if you sent `phone` and it differs from the verified number |
+| 400 | `email_not_verified` | The server requires a verified e-mail and none was sent. Send the person to step 5b |
+| 400 | `email_token_mismatch` | The e-mail was changed after verifying (or the token belongs to another phone). Verify the e-mail again |
+| 400 | `email_token_invalid` | The `emailToken` expired (30 min) or is not valid. Verify the e-mail again |
 | 401 | n/a | Registration token missing or expired (30 min). Send the user back to the OTP step |
 | 403 | n/a | Government only: "Institution or organisation authentication code is incorrect". The message is deliberately generic. Highlight the institution and code fields |
 | 409 | `already_registered` | The phone, NIC or email already has an account. Offer "Log in instead" |

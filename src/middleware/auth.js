@@ -10,6 +10,18 @@ function sign(payload, expiresIn) {
 const signUserToken = (userId) => sign({ typ: 'user', sub: userId }, '7d');
 const signStaffToken = (staffId) => sign({ typ: 'staff', sub: staffId }, '8h');
 const signRegistrationToken = (phone) => sign({ typ: 'register', phone }, '30m');
+/** Proof that `email` was verified by the person who verified `phone`. Checked by POST /register. */
+const signEmailToken = (email, phone) => sign({ typ: 'email', email, phone }, '30m');
+
+/** Returns { email, phone } from a valid e-mail token, or null (bad signature, expired, wrong type). */
+function verifyEmailToken(token) {
+  try {
+    const p = jwt.verify(String(token || ''), config.jwtSecret, { algorithms: ['HS256'] });
+    return p.typ === 'email' && p.email && p.phone ? { email: p.email, phone: p.phone } : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 function readBearer(req, expectedType) {
   const header = req.headers.authorization || '';
@@ -54,6 +66,8 @@ module.exports = {
   signUserToken,
   signStaffToken,
   signRegistrationToken,
+  signEmailToken,
+  verifyEmailToken,
   requireUser,
   requireRegistration,
   requireStaff,

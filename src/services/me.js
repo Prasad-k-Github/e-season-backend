@@ -13,6 +13,7 @@ function publicUser(u, extra = {}) {
     fullName: u.full_name,
     phone: u.phone,
     email: u.email,
+    emailVerified: !!u.email_verified_at,
     nicLast4: u.nic_last4,
     address: u.address,
     preferredLanguage: u.preferred_language,
@@ -99,7 +100,7 @@ async function deleteAccount(user) {
       [user.id]);
     const stub = newId().replace(/-/g, '');
     await tx.execute(
-      `UPDATE users SET full_name = 'Deleted user', nic_hash = ?, nic_last4 = NULL, phone = ?, email = NULL,
+      `UPDATE users SET full_name = 'Deleted user', nic_hash = ?, nic_last4 = NULL, phone = ?, email = NULL, email_verified_at = NULL,
               date_of_birth = NULL, address = NULL, rejection_reason = NULL, deleted_at = ?, updated_at = ?
        WHERE id = ?`,
       [`deleted-${stub}`, `del${stub.slice(0, 12)}`, now, now, user.id]);

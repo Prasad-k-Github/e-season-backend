@@ -13,6 +13,7 @@ const {
 const { registrationFiles, pickDocs, removeUploaded } = require('../middleware/upload');
 
 const otp = require('../services/otp');
+const emailVerification = require('../services/emailVerification');
 const passengerAuth = require('../services/passengerAuth');
 const registration = require('../services/registration');
 const me = require('../services/me');
@@ -66,6 +67,15 @@ router.post('/auth/otp/request', limiter(60, 10), h(async (req, res) => {
 
 router.post('/auth/otp/verify', limiter(15, 20), h(async (req, res) => {
   res.json(await otp.verifyOtp(req.body.phone, req.body.code));
+}));
+
+// E-mail verification during registration. Needs the registration token from the phone OTP step.
+router.post('/auth/email/request', requireRegistration, limiter(60, 10), h(async (req, res) => {
+  res.json(await emailVerification.requestEmailCode(req.registration.phone, req.body.email));
+}));
+
+router.post('/auth/email/verify', requireRegistration, limiter(15, 20), h(async (req, res) => {
+  res.json(await emailVerification.verifyEmailCode(req.registration.phone, req.body.email, req.body.code));
 }));
 
 router.post('/auth/login', limiter(15, 20), h(async (req, res) => {

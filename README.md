@@ -34,6 +34,9 @@ Set `SEED_STAFF_PASSWORD` to choose another password. The fares in the seed are 
 **Upgrading an existing database:** run `npm run db:add-passenger-password` once. It adds `users.password_hash`.
 Passengers created before that have no password; they sign in with the OTP and set one via `PUT /me/password`.
 
+**Upgrading for e-mail verification:** run `npm run db:add-email-verification` once. It adds `users.email_verified_at`
+and the `email_verifications` table. Safe to run twice. Accounts created earlier show `emailVerified: false`.
+
 ### Real SMS OTP (Text.lk)
 
 Set `OTP_PROVIDER=textlk`, `TEXTLK_API_TOKEN` (from your Text.lk dashboard) and `TEXTLK_SENDER_ID`
@@ -42,6 +45,44 @@ With `OTP_PROVIDER=mock` no SMS is sent and the code is returned in the response
 
 If Text.lk rejects the message, the API returns `502 sms_failed` and the reason is logged on the server.
 
+### E-mail verification
+
+During registration the passenger confirms their e-mail address with a 6-digit code, after the phone OTP step:
+
+```
+POST /auth/otp/verify     ─► registrationToken
+POST /auth/email/request  {email}        (Bearer registrationToken)  ─► a code is e-mailed
+POST /auth/email/verify   {email, code}  (Bearer registrationToken)  ─► { emailToken }
+POST /register  (… email, emailToken)                                 ─► account with emailVerified: true
+```
+
+- The code expires after 10 minutes (`EMAIL_CODE_TTL_MINUTES`), locks after 5 wrong attempts, is stored hashed, and works once.
+- The `emailToken` is valid for 30 minutes and is tied to **one e-mail address and one phone number**. If the person changes
+  the e-mail after verifying, or someone else's token is used, `/register` answers `400 email_token_mismatch`.
+- `REQUIRE_EMAIL_VERIFICATION=false` (default): `/register` still accepts a missing e-mail, so the current app keeps working.
+  A token that is sent is always checked. Set it to **`true`** once the app has the e-mail step: then `/register` refuses a
+  missing or unverified e-mail (`400 email_not_verified`).
+- `GET /me` returns `emailVerified`.
+- Requesting a code for an address that already has an account returns `409 email_in_use` (a prototype trade-off: it tells a
+  stranger the address is registered, but it saves the person from filling in the whole form first).
+
+**Sending real e-mail (SMTP).** With `EMAIL_PROVIDER=mock` (default) nothing is sent: the code is printed in the server log and
+returned in the response as `devCode` (development only; the server refuses `mock` when `NODE_ENV=production`). For real e-mail:
+
+```
+EMAIL_PROVIDER=smtp
+EMAIL_FROM="E-Season <youraddress@gmail.com>"
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=youraddress@gmail.com
+SMTP_PASS=your-16-character-app-password
+```
+
+For Gmail, turn on 2-step verification and create an **App Password** at https://myaccount.google.com/apppasswords (your normal
+password will not work). Services such as Brevo or Mailtrap work the same way with their own host and credentials.
+If the mail server fails, the API returns `502 email_failed` and the person can retry straight away.
+
 ## How the flow works
 
 ```
@@ -49,7 +90,8 @@ Passenger app                                        Staff / officers
 ─────────────                                        ────────────────
 POST /auth/otp/request  ─► code (mock)
 POST /auth/otp/verify   ─► registrationToken (new)  or  token (existing account)
-POST /register (multipart: details + 3 images)
+POST /auth/email/request, /auth/email/verify  ─► emailToken (e-mail confirmed)
+POST /register (multipart: details + emailToken + 3 images)
    private    ─► pending_verification ───────────► admin: verification-decision ─► verified
    government ─► pending_institution_approval ───► officer: institution-decision ─► pending_verification ─► (admin) ─► verified
 POST /fares/quote, POST /applications
@@ -67,7 +109,8 @@ All paths are under `/api`. Errors look like `{ "error": { "code", "message", "d
 
 **Public**: `GET /health`, `GET /stations`, `GET /institutions` (names only), `GET /ticket-public-key`
 
-**Auth**: `POST /auth/otp/request {phone}`, `POST /auth/otp/verify {phone, code}`, `POST /auth/login {phone, password}` (passenger), `POST /auth/staff/login {email, password}`
+**Auth**: `POST /auth/otp/request {phone}`, `POST /auth/otp/verify {phone, code}`, `POST /auth/login {phone, password}` (passenger), `POST /auth/staff/login {email, password}`,
+`POST /auth/email/request {email}` and `POST /auth/email/verify {email, code}` (both with `Bearer <registrationToken>`; see *E-mail verification*)
 
 **Registration** (`Authorization: Bearer <registrationToken>`): `POST /register` as `multipart/form-data`
 
@@ -76,7 +119,8 @@ All paths are under `/api`. Errors look like `{ "error": { "code", "message", "d
 | `passengerType` | `government`, `private` or `general` (the Flutter app's name for private) |
 | `password` | required, 8 to 128 characters (stored as a bcrypt hash) |
 | `fullName`, `nic`, `address` | required. NIC: 9 digits + V/X, or 12 digits |
-| `email`, `dateOfBirth`, `preferredLanguage` | optional (`en`, `si`, `ta`) |
+| `email`, `dateOfBirth`, `preferredLanguage` | optional (`en`, `si`, `ta`). The e-mail becomes required when `REQUIRE_EMAIL_VERIFICATION=true` |
+| `emailToken` | from `POST /auth/email/verify`. Must match `email` and the verified phone, otherwise `400 email_token_mismatch` |
 | `consent` | must be `true` |
 | `photo` (or `profilePhoto`), `nicFront`, `nicBack` | JPEG/PNG files, max 5 MB each |
 | government only | `institutionId` or `institution` (name), `orgAuthCode`, optional `employeeNo`, `designation` |
@@ -120,6 +164,7 @@ The phone number comes from the verified OTP, not from the form.
 - Tickets are ES256-signed tokens. The inspector app can verify them offline with the public key from `GET /ticket-public-key`. Tokens contain the holder's name and route, never the NIC.
 - `DELETE /me` removes images, anonymises the record and revokes tickets (the row stays so payment and audit history keep working).
 - OTP codes are stored hashed, expire after 5 minutes, lock after 5 wrong attempts, and the OTP, login and registration endpoints are rate-limited.
+- E-mail codes follow the same rules (10 minutes, 5 attempts, hashed, single use) with a per-address cooldown, and are bound to the registering phone number.
 - The institution/organisation-code check returns one generic error, so it doesn't reveal which part was wrong.
 - Payments store a sandbox reference only. No card data is accepted anywhere.
 
@@ -129,8 +174,10 @@ The phone number comes from the verified OTP, not from the form.
 npm test      # needs Node 22.13+ (uses the built-in node:sqlite)
 ```
 
-25 tests cover the validators, the signed tickets (tampering, wrong key, `alg: none`, expiry) and the full API flow:
-registration, both approval paths, role scoping, applications, payment, ticket scanning, resubmission and account deletion.
+37 tests cover the validators, the signed tickets (tampering, wrong key, `alg: none`, expiry) and the full API flow:
+registration, both approval paths, role scoping, applications, payment, ticket scanning, resubmission and account deletion,
+plus the e-mail verification flow (`test/email.test.js`): wrong and expired codes, lockout, cooldown, the flag on and off,
+tokens for another e-mail or phone, SMTP sending and failure, and account deletion.
 
 **Important limitation:** the development machine had no MySQL server, so the tests run the same `db/schema.sql`
 (converted automatically to SQLite syntax) through a SQLite adapter. That checks the business logic, but **not MySQL
