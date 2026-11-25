@@ -528,3 +528,34 @@ test('passenger password: required at registration, login, change password', asy
   assert.equal((await api('POST', '/auth/login', { json: { phone: '0776660001', password: 'NewPassw0rd#1' } })).status, 200);
   assert.equal((await api('PUT', '/me/password', { json: {} })).status, 401);
 });
+
+test('admin: stations, fares and application windows (create + list)', async () => {
+  const st = (name) => api('POST', '/admin/stations', { token: state.admin, json: { name, line: 'Test', hasSeatReservation: true } });
+  const a = await st('Catalog A');
+  const b = await st('Catalog B');
+  assert.equal(a.status, 201, JSON.stringify(a.data));
+  assert.equal((await st('Catalog A')).status, 409);
+
+  const fare = { fromStationId: a.data.id, toStationId: b.data.id, ticketClass: 'second', period: 'monthly', passengerType: 'private', amountLkr: 1234 };
+  assert.equal((await api('POST', '/admin/fares', { token: state.admin, json: fare })).status, 201);
+  assert.equal((await api('POST', '/admin/fares', { token: state.admin, json: { ...fare, toStationId: a.data.id } })).status, 400);
+
+  const fares = await api('GET', '/admin/fares', { token: state.admin });
+  assert.equal(fares.status, 200);
+  const mine = fares.data.find((f) => f.fromStation === 'Catalog A' && f.toStation === 'Catalog B');
+  assert.ok(mine, 'new fare is listed');
+  assert.equal(mine.amountLkr, 1234);
+  assert.equal(mine.passengerType, 'private');
+
+  const w = { monthFor: '2031-01-01', opensOn: '2030-12-25', closesOn: '2031-01-05' };
+  assert.equal((await api('POST', '/admin/application-windows', { token: state.admin, json: w })).status, 201);
+  assert.equal((await api('POST', '/admin/application-windows', { token: state.admin, json: { ...w, closesOn: '2030-12-01' } })).status, 400);
+  const wins = await api('GET', '/admin/application-windows', { token: state.admin });
+  assert.equal(wins.status, 200);
+  assert.ok(wins.data.some((x) => String(x.monthFor).startsWith('2031-01-01')));
+
+  for (const path of ['/admin/fares', '/admin/application-windows']) {
+    assert.equal((await api('GET', path, { token: state.station })).status, 403);
+    assert.equal((await api('GET', path)).status, 401);
+  }
+});

@@ -130,6 +130,26 @@ async function createWindow(admin, body) {
   return { id };
 }
 
+async function listFares() {
+  const rows = await db.query(
+    `SELECT f.id, f.ticket_class, f.period, f.passenger_type, f.amount_lkr, f.effective_from,
+            a.name AS from_name, b.name AS to_name
+       FROM fares f
+       JOIN stations a ON a.id = f.from_station_id
+       JOIN stations b ON b.id = f.to_station_id
+      ORDER BY a.name, b.name, f.ticket_class, f.period, f.effective_from DESC
+      LIMIT 500`);
+  return rows.map((r) => ({
+    id: r.id, fromStation: r.from_name, toStation: r.to_name, ticketClass: r.ticket_class, period: r.period,
+    passengerType: r.passenger_type, amountLkr: Number(r.amount_lkr), effectiveFrom: r.effective_from,
+  }));
+}
+
+async function listWindows() {
+  const rows = await db.query('SELECT id, month_for, opens_on, closes_on FROM application_windows ORDER BY month_for DESC');
+  return rows.map((r) => ({ id: r.id, monthFor: r.month_for, opensOn: r.opens_on, closesOn: r.closes_on }));
+}
+
 async function listAudit(limit = 50) {
   const n = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const rows = await db.query(
@@ -142,5 +162,5 @@ async function listAudit(limit = 50) {
 }
 
 module.exports = {
-  createInstitution, listInstitutions, createStaff, listStaff, createStation, createFare, createWindow, listAudit,
+  createInstitution, listInstitutions, createStaff, listStaff, createStation, createFare, createWindow, listFares, listWindows, listAudit,
 };

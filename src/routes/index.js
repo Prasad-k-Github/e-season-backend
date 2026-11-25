@@ -183,6 +183,8 @@ router.post('/admin/staff', adminOnly, h(async (req, res) => {
 router.post('/admin/stations', adminOnly, h(async (req, res) => {
   res.status(201).json(await admin.createStation(req.staff, req.body));
 }));
+router.get('/admin/fares', adminOnly, h(async (req, res) => res.json(await admin.listFares())));
+router.get('/admin/application-windows', adminOnly, h(async (req, res) => res.json(await admin.listWindows())));
 router.post('/admin/fares', adminOnly, h(async (req, res) => {
   res.status(201).json(await admin.createFare(req.staff, req.body));
 }));
